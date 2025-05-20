@@ -4,6 +4,42 @@ from ragas.integrations.r2r import (
     transform_to_ragas_dataset as transform_to_ragas_dataset_r2r,
 )
 
+import logging
+from typing import Optional
+
+
+def get_logger(name: Optional[str] = None) -> logging.Logger:
+    """
+    Get a configured logger with consistent formatting.
+
+    Args:
+        name: Optional name for the logger (typically __name__ from the calling module)
+
+    Returns:
+        Configured logger instance
+    """
+    logger = logging.getLogger(name)
+
+    if not logger.handlers:
+        handler = logging.StreamHandler()
+
+        grey = "\033[90m"
+        blue = "\033[94m"
+        green = "\033[92m"
+        yellow = "\033[93m"
+        red = "\033[91m"
+        reset = "\033[0m"
+
+        formatter = logging.Formatter(
+            f"{grey}%(asctime)s{reset} - {blue}%(name)s{reset} - {green}%(levelname)s{reset} - %(message)s"
+        )
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+
+        logger.setLevel(logging.INFO)
+
+    return logger
+
 
 def load_dataset(dataset_path: str) -> Tuple[List[str], List[str], List[List[str]]]:
     """

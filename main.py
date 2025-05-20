@@ -1,7 +1,7 @@
 import os
 import asyncio
 import logging
-from logging import getLogger
+from utils import get_logger
 
 from r2r_client import (
     R2RClient,
@@ -29,39 +29,7 @@ from ragas_eval import RagasEvaluationConfig, RagasEvaluator
 from utils import load_dataset, transform_to_ragas_dataset
 from dotenv import load_dotenv
 
-
-class ColoredFormatter(logging.Formatter):
-    """Custom formatter with different colors for different log levels"""
-
-    grey = "\033[90m"
-    blue = "\033[94m"
-    green = "\033[92m"
-    yellow = "\033[93m"
-    red = "\033[91m"
-    reset = "\033[0m"
-
-    FORMATS = {
-        logging.DEBUG: grey,
-        logging.INFO: green,
-        logging.WARNING: yellow,
-        logging.ERROR: red,
-        logging.CRITICAL: red,
-    }
-
-    def format(self, record):
-        log_color = self.FORMATS.get(record.levelno, self.grey)
-        formatter = logging.Formatter(
-            f"{self.grey}%(asctime)s{self.reset} - {self.blue}%(name)s{self.reset} - {log_color}%(levelname)s{self.reset} - %(message)s"
-        )
-        return formatter.format(record)
-
-
-logger = getLogger(__name__)
-logger.setLevel(logging.INFO)
-if not logger.handlers:
-    handler = logging.StreamHandler()
-    handler.setFormatter(ColoredFormatter())
-    logger.addHandler(handler)
+logger = get_logger(__name__)
 
 load_dotenv()
 

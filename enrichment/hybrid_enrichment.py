@@ -5,7 +5,7 @@ This module provides a combined strategy for enriching chunks with both metadata
 and contextual information from surrounding chunks.
 """
 
-from typing import List, Optional
+from typing import List
 from langchain_openai import ChatOpenAI
 from enrichment.base import ChunkEnrichmentStrategy
 from enrichment.metadata_enrichment import MetadataEnrichment
@@ -25,6 +25,7 @@ class HybridEnrichment(ChunkEnrichmentStrategy):
         max_entities: int = 5,
         max_keywords: int = 7,
         metadata_first: bool = False,
+        show_progress_bar: bool = False,
     ):
         """
         Initialize the hybrid enrichment strategy.
@@ -38,6 +39,7 @@ class HybridEnrichment(ChunkEnrichmentStrategy):
             max_entities: Maximum number of entities to include
             max_keywords: Maximum number of keywords to include
             metadata_first: Whether to apply metadata enrichment before contextual enrichment
+            show_progress_bar: Whether to show a progress bar during processing
         """
         self.metadata_enricher = MetadataEnrichment(
             llm=llm,
@@ -46,10 +48,12 @@ class HybridEnrichment(ChunkEnrichmentStrategy):
             include_topic=include_topic,
             max_entities=max_entities,
             max_keywords=max_keywords,
+            show_progress_bar=show_progress_bar,
         )
         self.contextual_enricher = ContextualEnrichment(
             llm=llm,
             n_chunks=n_chunks,
+            show_progress_bar=show_progress_bar,
         )
         self.metadata_first = metadata_first
 
@@ -66,9 +70,15 @@ class HybridEnrichment(ChunkEnrichmentStrategy):
         if not chunks:
             return chunks
 
+        enriched_chunks = []
+
         if self.metadata_first:
+            # Apply metadata enrichment first, followed by contextual enrichment
             metadata_enriched = self.metadata_enricher.enrich_chunks(chunks)
-            return self.contextual_enricher.enrich_chunks(metadata_enriched)
+            enriched_chunks = self.contextual_enricher.enrich_chunks(metadata_enriched)
         else:
+            # Apply contextual enrichment first, followed by metadata enrichment
             context_enriched = self.contextual_enricher.enrich_chunks(chunks)
-            return self.metadata_enricher.enrich_chunks(context_enriched)
+            enriched_chunks = self.metadata_enricher.enrich_chunks(context_enriched)
+
+        return enriched_chunks
