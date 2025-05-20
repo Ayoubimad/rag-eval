@@ -15,7 +15,7 @@ This research project presents a comprehensive empirical study of Retrieval-Augm
 - **Character**: Splits documents into chunks of a fixed number of characters, regardless of sentence or paragraph boundaries.
 - **Recursive**: Recursively splits text using a hierarchy of separators (e.g., paragraphs, sentences, words) to create coherent chunks.
 - **SDPM (Semantic Double Pass Merging)**: Uses a two-pass approach to merge text segments based on semantic similarity, optimizing chunk boundaries for coherence and retrieval effectiveness.
-- **Semantic**: Divides text into chunks based on semantic similarity or topic coherence, often using embeddings or clustering.
+- **Semantic**: Divides text into chunks based on semantic similarity or topic coherence, using embeddings or clustering.
 
 ### Enrichment strategies:
 
@@ -38,3 +38,6 @@ This project uses the **RAGAS** framework for evaluation. RAGAS provides automat
 - **Context Precision & Recall**: Measures how accurately and completely the retrieved context supports the generated answers.
 - **Testset Generation**: Supports the creation of evaluation datasets tailored for RAG systems, enabling robust and reproducible benchmarking.
 
+#### R2R 
+
+this project uses R2R as Rag system under the hood.
