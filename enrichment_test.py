@@ -25,13 +25,13 @@ if __name__ == "__main__":
         max_entities=5,
         max_keywords=5,
         show_progress_bar=True,
-        max_concurrency=32,
+        max_concurrency=8,
     )
 
     contextual_enrichment = ContextualEnrichment(
         llm=llm,
         n_chunks=2,
-        max_concurrency=32,
+        max_concurrency=8,
         show_progress_bar=True,
     )
 
