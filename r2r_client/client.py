@@ -3,7 +3,7 @@ A simple R2R Client for RAG evaluation
 """
 
 from r2r import R2RClient as _R2RClient
-from typing import List, Optional
+from typing import List, Optional, Any
 from r2r_client.config import GenerationConfig, SearchSettings, GraphCreationSettings
 from utils import get_logger
 
@@ -52,15 +52,12 @@ class R2RClient:
             # client.graphs.build(collection_id=collection_id)
             try:
                 document_id = ingestion_response.results.document_id
-                logger.info("Extracting entities for document ID: %s", document_id)
                 self.client.documents.extract(
                     id=document_id,
                     settings=graph_creation_config.to_dict(),
-                    run_with_orchestration=False,
                 )
                 self.client.documents.deduplicate(
                     id=document_id,
-                    run_with_orchestration=False,
                 )  # Deduplicate the extracted entities
             except Exception as e:
                 logger.error("Error extracting entities: %s", e)
@@ -69,10 +66,10 @@ class R2RClient:
     def process_rag_query(
         self,
         question: str,
-        generation_config: GenerationConfig,
+        rag_generation_config: GenerationConfig,
         search_settings: SearchSettings,
         search_mode: str,
-    ) -> str:
+    ) -> Any:
         """Process a RAG query"""
         # gen_config_dict = generation_config.to_dict()
         # search_settings_dict = search_settings.to_dict()
@@ -84,19 +81,49 @@ class R2RClient:
         #    f"{search_mode} ({type(search_mode).__name__})",
         # )
 
-        response = self.client.retrieval.rag(
+        return self.client.retrieval.rag(
             query=question,
-            rag_generation_config=generation_config.to_dict(),
+            rag_generation_config=rag_generation_config.to_dict(),
             search_mode=search_mode,
             search_settings=search_settings.to_dict(),
+            include_title_if_available=False,
+            include_web_search=False,
         )
-        return response
 
-    def reset_graph(
+    def graph_reset(
         self,
         collection_id: str,
     ) -> None:
         """Reset the graph"""
         self.client.graphs.reset(
+            collection_id=collection_id,
+        )
+
+    def get_default_collection_id(self) -> str:
+        """Get the default collection ID"""
+        return self.get_collection_by_name("Default")
+
+    def get_collection_by_name(self, name: str) -> str:
+        """Get the collection ID by name"""
+        response = self.client.collections.retrieve_by_name(
+            name=name,
+        )
+        return response.results.id
+
+    def graph_pull(
+        self,
+        collection_id: str,
+    ) -> None:
+        """Pull the graph"""
+        self.client.graphs.pull(
+            collection_id=collection_id,
+        )
+
+    def graph_build_communities(
+        self,
+        collection_id: str,
+    ) -> None:
+        """Build the communities graph"""
+        self.client.graphs.build(
             collection_id=collection_id,
         )

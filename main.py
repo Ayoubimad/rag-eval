@@ -54,6 +54,8 @@ def clean_text(text: str) -> str:
 
 async def main():
 
+    enable_graph_rag = True  # Parameter to control entity extraction and graphRAG
+
     LLM_MODEL = os.getenv("LLM_MODEL")
     LLM_API_KEY = os.getenv("LLM_API_KEY")
     LLM_API_BASE = os.getenv("LLM_API_BASE")
@@ -93,15 +95,16 @@ async def main():
 
     client = R2RClient(base_url="http://localhost:7272", timeout=3600)
 
+    # Enable graph settings if Graph RAG is enabled
+    graph_settings = GraphSearchSettings(
+        enabled=enable_graph_rag,
+    )
+
     hybrid_search_settings = HybridSearchSettings(
         full_text_weight=0.3,
         semantic_weight=0.7,
         full_text_limit=200,
         rrf_k=60,
-    )
-
-    graph_settings = GraphSearchSettings(
-        enabled=False,
     )
 
     rag_generation_config = GenerationConfig(
@@ -136,17 +139,9 @@ async def main():
         llm_model=LLM_MODEL,
         llm_api_key=LLM_API_KEY,
         llm_api_base=LLM_API_BASE,
-        llm_temperature=0.1,
-        llm_max_tokens=4096,
-        llm_top_p=1,
-        llm_timeout=3600,
         embeddings_model=EMBEDDINGS_MODEL,
         embeddings_api_key=EMBEDDINGS_API_KEY,
         embeddings_api_base=EMBEDDINGS_API_BASE,
-        embeddings_timeout=3600,
-        batch_size=500,
-        max_workers=32,
-        eval_timeout=3600,
     )
 
     configs = {
@@ -235,6 +230,13 @@ async def main():
         logger.info("Deleting all documents from R2R...")
         await run_in_executor(None, client.delete_all_documents)
 
+        if enable_graph_rag:
+            logger.info("Resetting graph...")
+            default_collection_id = await run_in_executor(
+                None, client.get_default_collection_id
+            )
+            await run_in_executor(None, client.graph_reset, default_collection_id)
+
         async def process_and_ingest_file(file):
             def read_and_chunk():
                 try:
@@ -242,7 +244,13 @@ async def main():
                         text = f.read()
                     chunks = chunker.chunk(text=text, clean_function=clean_text)
                     if chunks:
-                        client.ingest_chunks(chunks)
+                        client.ingest_chunks(
+                            chunks,
+                            extract_entities=enable_graph_rag,
+                            graph_creation_config=(
+                                graph_creation_config if enable_graph_rag else None
+                            ),
+                        )
                     return len(chunks) if chunks else 0
                 except Exception as e:
                     logger.warning("Failed to process file %s: %s", file, e)
@@ -251,6 +259,13 @@ async def main():
             return await run_in_executor(ingestion_thread_pool, read_and_chunk)
 
         tasks = [process_and_ingest_file(file) for file in files]
+
+        if enable_graph_rag:
+            logger.info(
+                "Ingesting chunks with graph extraction enabled, this may take a while... \n even days for a large number of documents, I don't know how to speed it up."
+            )
+        else:
+            logger.info("Ingesting chunks with graph extraction disabled")
 
         total_chunks = 0
         for task in tqdm(
@@ -264,6 +279,22 @@ async def main():
         logger.info(
             "\nProcessed and ingested %d chunks from %d files", total_chunks, len(files)
         )
+
+        if enable_graph_rag:
+            logger.info("Building graph for knowledge base...")
+            default_collection_id = await run_in_executor(
+                None, client.get_default_collection_id
+            )
+
+            logger.info("Pulling entities to graph...")
+            await run_in_executor(None, client.graph_pull, default_collection_id)
+
+            logger.info("Building communities...")
+            await run_in_executor(
+                None, client.graph_build_communities, default_collection_id
+            )
+
+            logger.info("Graph building completed")
 
         for strategy_name, strategy_config in configs.items():
             logger.info(

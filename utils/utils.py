@@ -59,7 +59,7 @@ def load_dataset(dataset_path: str) -> Tuple[List[str], List[str], List[List[str
 
 def transform_to_ragas_dataset(
     user_inputs: List[str],
-    r2r_responses: List[str],
+    r2r_responses: Any,
     references: List[str],
     reference_contexts: List[List[str]],
 ) -> Dict[str, Any]:
@@ -75,7 +75,7 @@ def transform_to_ragas_dataset(
 
 
 def clean_text(text: str) -> str:
-    """Normalize whitespace in text.
+    """Normalize whitespace in text and remove ambiguous Unicode characters.
 
     Args:
         text: The text to clean
@@ -89,4 +89,8 @@ def clean_text(text: str) -> str:
     cleaned_text = re.sub(r"[\U0001F300-\U0001F9FF]", "", cleaned_text)
     # Remove formula-not-decoded comments
     cleaned_text = re.sub(r"<!-- formula-not-decoded -->", "", cleaned_text)
+    # Remove zero-width and other ambiguous Unicode characters
+    cleaned_text = re.sub(
+        r"[\u200B-\u200F\u2028-\u202F\u2060-\u206F]", "", cleaned_text
+    )
     return cleaned_text

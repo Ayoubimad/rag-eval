@@ -24,23 +24,25 @@ from ragas.metrics import (
 class RagasEvaluationConfig:
     """Default configuration for RAG evaluation"""
 
-    llm_model: str = "ISTA-DASLab/gemma-3-4b-it-GPTQ-4b-128g"
-    llm_temperature: float = 0.8
-    llm_timeout: int = 60
-    llm_max_tokens: int = 8192
-    llm_top_p: float = 0.95
+    llm_model: str = (
+        os.getenv("RAGAS_LLM_MODEL") or "ISTA-DASLab/gemma-3-4b-it-GPTQ-4b-128g"
+    )
+    llm_temperature: float = 0.1
+    llm_timeout: int = 120
+    llm_max_tokens: int = 4096
+    llm_top_p: float = 1.0
     llm_api_base: str = "http://localhost:8000/v1"
     llm_api_key: str = os.getenv("RAGAS_LLM_API_KEY") or "ragas-api-key"
 
     embeddings_model: str = "BAAI/bge-m3"
-    embeddings_timeout: int = 60
+    embeddings_timeout: int = 240
     embeddings_api_base: str = "http://localhost:8000/v1"
     embeddings_api_key: str = os.getenv("RAGAS_EMBEDDINGS_API_KEY") or "ragas-api-key"
 
     cache_dir: str = "ragas_cache"
 
     batch_size: int = 256
-    eval_timeout: int = 60
+    eval_timeout: int = 240
     max_workers: Optional[int] = os.cpu_count() * 2
 
     metrics: List[str] = None
