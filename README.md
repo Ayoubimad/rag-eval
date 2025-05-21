@@ -41,3 +41,7 @@ This project uses the **RAGAS** framework for evaluation. RAGAS provides automat
 #### R2R 
 
 This project utilizes R2R as the underlying RAG system.
+
+### ⚠️ Warning
+- Ingesting chunks with graph extraction enabled takes a while...even days for a large number of documents, I don't know how to speed it up. It depends on R2R, 
+

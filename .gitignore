@@ -7,6 +7,8 @@ __pycache__/
 *.so
 
 prova*.py
+*/*.out
+scripts/*.out
 
 __pycache__/
 # Distribution / packaging
