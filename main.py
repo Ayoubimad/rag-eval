@@ -1,6 +1,6 @@
 import os
 import asyncio
-import logging
+import re
 from utils import get_logger
 
 from r2r_client import (
@@ -21,7 +21,6 @@ from chunking import (
     CharacterChunker,
     ChonkieEmbeddings,
 )
-
 from langchain_openai import ChatOpenAI
 from executor import run_in_executor
 from concurrent.futures import ThreadPoolExecutor
@@ -32,6 +31,24 @@ from dotenv import load_dotenv
 logger = get_logger(__name__)
 
 load_dotenv()
+
+
+def clean_text(text: str) -> str:
+    """Normalize whitespace in text.
+
+    Args:
+        text: The text to clean
+
+    Returns:
+        Text cleaned of non-ascii characters, base64 images, and normalized whitespace
+    """
+    # Remove base64 images
+    cleaned_text = re.sub(r"!\[.*?\]\(data:image/[^;]*;base64,[^)]*\)", "", text)
+    # Remove emojis while preserving mathematical symbols and other useful unicode
+    cleaned_text = re.sub(r"[\U0001F300-\U0001F9FF]", "", cleaned_text)
+    # Remove formula-not-decoded comments
+    cleaned_text = re.sub(r"<!-- formula-not-decoded -->", "", cleaned_text)
+    return cleaned_text
 
 
 async def main():
@@ -107,6 +124,9 @@ async def main():
         base_url=LLM_API_BASE,
     )
 
+    test_response = llm.invoke("Say hello!")
+    logger.info("LLM test response: %s", test_response.content)
+
     ragas_evaluation_config = RagasEvaluationConfig(
         llm_model=LLM_MODEL,
         llm_api_key=LLM_API_KEY,
@@ -121,6 +141,7 @@ async def main():
         embeddings_timeout=3600,
         batch_size=500,
         max_workers=32,
+        eval_timeout=3600,
     )
 
     configs = {
@@ -175,7 +196,7 @@ async def main():
         # ),
         "character": CharacterChunker(
             chunk_size=1024,
-            chunk_overlap=250,
+            chunk_overlap=256,
         ),
         "semantic": SemanticChunker(
             embedding_model=chonkie_embeddings,
@@ -200,33 +221,29 @@ async def main():
     )
 
     for chunker_name, chunker in chunkers.items():
-        logger.info("\n%s", "=" * 80)
+
+        ingestion_thread_pool = ThreadPoolExecutor(max_workers=16)
+        search_thread_pool = ThreadPoolExecutor(max_workers=16)
+
         logger.info("Testing chunker: %s", chunker_name)
-        logger.info("%s", "=" * 80)
 
+        logger.info("Deleting all documents from R2R...")
         await run_in_executor(None, client.delete_all_documents)
-
-        thread_pool = ThreadPoolExecutor(max_workers=min(32, len(files)))
 
         async def process_and_ingest_file(file):
             def read_and_chunk():
                 try:
                     with open(f"{dir_path}/{file}", "r") as f:
                         text = f.read()
-                    return chunker.chunk(text)
+                    chunks = chunker.chunk(text=text, clean_function=clean_text)
+                    if chunks:
+                        client.ingest_chunks(chunks)
+                    return len(chunks) if chunks else 0
                 except Exception as e:
-                    logger.warning("Failed to chunk file %s: %s", file, e)
-                    return None
+                    logger.warning("Failed to process file %s: %s", file, e)
+                    return 0
 
-            chunks = await run_in_executor(thread_pool, read_and_chunk)
-            if not chunks:
-                return 0
-            try:
-                await run_in_executor(thread_pool, client.ingest_chunks, chunks)
-            except Exception as e:
-                logger.warning("Failed to ingest chunks for file %s: %s", file, e)
-                return 0
-            return len(chunks)
+            return await run_in_executor(ingestion_thread_pool, read_and_chunk)
 
         tasks = [process_and_ingest_file(file) for file in files]
 
@@ -239,24 +256,23 @@ async def main():
             num_chunks = await task
             total_chunks += num_chunks
 
+        ingestion_thread_pool.shutdown(wait=True)
+
         logger.info(
             "\nProcessed and ingested %d chunks from %d files", total_chunks, len(files)
         )
-        thread_pool.shutdown(wait=True)
 
         for strategy_name, strategy_config in configs.items():
             logger.info(
-                "\nTesting %s strategy with %s chunker:", strategy_name, chunker_name
+                "\nTesting %s strategy with %s chunker and search settings: %s",
+                strategy_name,
+                chunker_name,
+                strategy_config["search_settings"].to_dict(),
             )
-            logger.info(
-                "Search settings: %s", strategy_config["search_settings"].to_dict()
-            )
-            logger.info("Search mode: %s", strategy_config["search_mode"])
-            logger.info("%s", "-" * 80)
 
             async def process_query(user_input):
                 r2r_response = await run_in_executor(
-                    None,
+                    search_thread_pool,
                     client.process_rag_query,
                     user_input,
                     rag_generation_config,
@@ -274,6 +290,8 @@ async def main():
             ):
                 r2r_responses.append(await task)
 
+            search_thread_pool.shutdown(wait=True)
+
             ragas_eval_dataset = transform_to_ragas_dataset(
                 user_inputs=user_inputs,
                 r2r_responses=r2r_responses,
@@ -286,7 +304,6 @@ async def main():
             )
             results = evaluator.evaluate_dataset(ragas_eval_dataset)
             logger.info("%s", results)
-            logger.info("%s", "-" * 80)
 
 
 if __name__ == "__main__":

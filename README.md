@@ -2,7 +2,7 @@
 
 Thesis Project on Retrieval-Augmented Generation Systems
 
-## Abstract
+## Introduction
 
 This research project presents a comprehensive empirical study of Retrieval-Augmented Generation (RAG) systems, focusing on three critical components:
 1. Document chunking strategies and their impact on retrieval effectiveness
@@ -40,4 +40,4 @@ This project uses the **RAGAS** framework for evaluation. RAGAS provides automat
 
 #### R2R 
 
-this project uses R2R as Rag system under the hood.
+This project utilizes R2R as the underlying RAG system.

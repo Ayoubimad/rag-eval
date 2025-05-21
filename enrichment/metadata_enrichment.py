@@ -80,7 +80,6 @@ class MetadataEnrichment(ChunkEnrichmentStrategy):
         all_entities = []
         all_keywords = []
 
-        # First pass - extract metadata from each chunk
         chunks_iter = (
             tqdm(enumerate(chunks), total=len(chunks), desc="Extracting metadata")
             if self.show_progress_bar
@@ -114,8 +113,6 @@ class MetadataEnrichment(ChunkEnrichmentStrategy):
                         all_keywords.append(keyword)
                 all_keywords = all_keywords[: self.max_keywords]
 
-        # Second pass - enrich each chunk with the collected metadata
-        # This can be done concurrently
         tasks = []
         for chunk in chunks:
             tasks.append(
@@ -130,7 +127,7 @@ class MetadataEnrichment(ChunkEnrichmentStrategy):
         if self.show_progress_bar:
             enriched_chunks = []
             for task in tqdm(
-                asyncio.as_completed(tasks), total=len(tasks), desc="Enriching chunks"
+                asyncio.as_completed(tasks), total=len(tasks), desc="Adding metadata"
             ):
                 enriched_chunks.append(await task)
             # Maintain original order
