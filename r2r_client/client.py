@@ -3,8 +3,8 @@ A simple R2R Client for RAG evaluation
 """
 
 from r2r import R2RClient as _R2RClient
-from typing import List
-from r2r_client.config import GenerationConfig, SearchSettings
+from typing import List, Optional
+from r2r_client.config import GenerationConfig, SearchSettings, GraphCreationSettings
 import logging
 from logging import getLogger
 
@@ -43,9 +43,33 @@ class R2RClient:
             for doc in documents.results:
                 self.client.documents.delete(str(doc.id))
 
-    def ingest_chunks(self, chunks: List[str]) -> None:
+    def ingest_chunks(
+        self,
+        chunks: List[str],
+        extract_entities: bool = False,
+        graph_creation_config: Optional[GraphCreationSettings] = None,
+    ) -> None:
         """Ingest chunks into R2R"""
-        self.client.documents.create(chunks=chunks)
+        ingestion_response = self.client.documents.create(chunks=chunks)
+        if extract_entities:
+            # HERE WE JUST INGEST AND EXTRACT ENTITIES
+            # For Graph RAG, we need to extract entities and relationships after ingestion
+            # The entities extracted are not directly added into the graph
+            # To add them: client.graphs.pull(collection_id=collection_id)
+            # As soon as the graph is pulled we can build communities, in order to perform semantic search over communities.
+            # client.graphs.build(collection_id=collection_id)
+            try:
+                document_id = ingestion_response.results.document_id
+                logger.info("Extracting entities for document ID: %s", document_id)
+                self.client.documents.extract(
+                    id=document_id, settings=graph_creation_config.to_dict()
+                )
+                self.client.documents.deduplicate(
+                    id=document_id
+                )  # Deduplicate the extracted entities
+            except Exception as e:
+                logger.error("Error extracting entities: %s", e)
+                return
 
     def process_rag_query(
         self,

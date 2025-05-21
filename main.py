@@ -1,7 +1,6 @@
 import os
 import asyncio
-import logging
-from utils import get_logger
+from utils import get_logger, clean_text
 
 from r2r_client import (
     R2RClient,
@@ -200,11 +199,12 @@ async def main():
     )
 
     for chunker_name, chunker in chunkers.items():
-        logger.info("\n%s", "=" * 80)
-        logger.info("Testing chunker: %s", chunker_name)
-        logger.info("%s", "=" * 80)
+
+        logger.info("Deleting all documents from R2R")
 
         await run_in_executor(None, client.delete_all_documents)
+
+        logger.info("Testing chunker: %s", chunker_name)
 
         thread_pool = ThreadPoolExecutor(max_workers=min(32, len(files)))
 
@@ -213,7 +213,7 @@ async def main():
                 try:
                     with open(f"{dir_path}/{file}", "r") as f:
                         text = f.read()
-                    return chunker.chunk(text)
+                    return chunker.chunk(text, clean_text)
                 except Exception as e:
                     logger.warning("Failed to chunk file %s: %s", file, e)
                     return None
