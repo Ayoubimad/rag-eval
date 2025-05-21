@@ -62,10 +62,13 @@ class R2RClient:
                 document_id = ingestion_response.results.document_id
                 logger.info("Extracting entities for document ID: %s", document_id)
                 self.client.documents.extract(
-                    id=document_id, settings=graph_creation_config.to_dict()
+                    id=document_id,
+                    settings=graph_creation_config.to_dict(),
+                    run_with_orchestration=False,
                 )
                 self.client.documents.deduplicate(
-                    id=document_id
+                    id=document_id,
+                    run_with_orchestration=False,
                 )  # Deduplicate the extracted entities
             except Exception as e:
                 logger.error("Error extracting entities: %s", e)
@@ -86,3 +89,12 @@ class R2RClient:
             search_settings=search_settings.to_dict(),
         )
         return response
+
+    def reset_graph(
+        self,
+        collection_id: str,
+    ) -> None:
+        """Reset the graph"""
+        self.client.graphs.reset(
+            collection_id=collection_id,
+        )

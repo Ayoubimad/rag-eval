@@ -56,6 +56,13 @@ graph_creation_config = GraphCreationSettings(
 )
 
 client.delete_all_documents()
+response = client.client.graphs.reset(
+    collection_id="122fdf6a-e116-546b-a8f6-e4cb2e2c0a09",
+)
+
+exit()
+
 client.ingest_chunks(
     chunks, extract_entities=True, graph_creation_config=graph_creation_config
 )
+client.client.graphs.pull(collection_id="122fdf6a-e116-546b-a8f6-e4cb2e2c0a09")
