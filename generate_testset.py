@@ -29,7 +29,7 @@ logger = get_logger(__name__)
 DEFAULT_CONFIG = {
     "DATA_DIR": "./data/arxiv/arxiv_papers_md_cleaned",
     "OUTPUT_PATH": "datasets/ragas_arxiv_papers_dataset.json",
-    "TESTSET_SIZE": 500,
+    "TESTSET_SIZE": 1500,
     "TIMEOUT": 60000,
     "EMBEDDING_MODEL": "BAAI/bge-m3",
     "EMBEDDING_API_URL": "http://172.18.21.126:8000/v1",

@@ -93,8 +93,8 @@ async def main():
     client = R2RClient(base_url="http://localhost:7272", timeout=3600)
 
     hybrid_search_settings = HybridSearchSettings(
-        full_text_weight=1,
-        semantic_weight=5,
+        full_text_weight=0.3,
+        semantic_weight=0.7,
         full_text_limit=200,
         rrf_k=60,
     )
@@ -167,9 +167,9 @@ async def main():
         "rag_fusion": {
             "search_settings": SearchSettings(
                 search_strategy="rag_fusion",
-                use_hybrid_search=True,
+                use_hybrid_search=False,
                 use_semantic_search=True,
-                use_fulltext_search=True,
+                use_fulltext_search=False,
                 hybrid_settings=hybrid_search_settings,
                 limit=5,
                 graph_settings=graph_settings,
@@ -179,9 +179,9 @@ async def main():
         "hyde": {
             "search_settings": SearchSettings(
                 search_strategy="hyde",
-                use_hybrid_search=True,
+                use_hybrid_search=False,
                 use_semantic_search=True,
-                use_fulltext_search=True,
+                use_fulltext_search=False,
                 limit=5,
                 hybrid_settings=hybrid_search_settings,
                 graph_settings=graph_settings,
@@ -220,10 +220,10 @@ async def main():
         dataset_path=dataset_path
     )
 
-    for chunker_name, chunker in chunkers.items():
+    ingestion_thread_pool = ThreadPoolExecutor(max_workers=16)
+    search_thread_pool = ThreadPoolExecutor(max_workers=16)
 
-        ingestion_thread_pool = ThreadPoolExecutor(max_workers=16)
-        search_thread_pool = ThreadPoolExecutor(max_workers=16)
+    for chunker_name, chunker in chunkers.items():
 
         logger.info("Testing chunker: %s", chunker_name)
 
@@ -255,8 +255,6 @@ async def main():
         ):
             num_chunks = await task
             total_chunks += num_chunks
-
-        ingestion_thread_pool.shutdown(wait=True)
 
         logger.info(
             "\nProcessed and ingested %d chunks from %d files", total_chunks, len(files)
@@ -290,8 +288,6 @@ async def main():
             ):
                 r2r_responses.append(await task)
 
-            search_thread_pool.shutdown(wait=True)
-
             ragas_eval_dataset = transform_to_ragas_dataset(
                 user_inputs=user_inputs,
                 r2r_responses=r2r_responses,
@@ -304,6 +300,9 @@ async def main():
             )
             results = evaluator.evaluate_dataset(ragas_eval_dataset)
             logger.info("%s", results)
+
+    ingestion_thread_pool.shutdown(wait=True)
+    search_thread_pool.shutdown(wait=True)
 
 
 if __name__ == "__main__":
