@@ -9,6 +9,7 @@ from r2r_client import (
     SearchSettings,
     HybridSearchSettings,
     GraphSearchSettings,
+    GraphCreationSettings,
 )
 
 from tqdm import tqdm
@@ -106,9 +107,13 @@ async def main():
     rag_generation_config = GenerationConfig(
         model=RAG_GENERATION_MODEL,
         api_base=RAG_GENERATION_API_BASE,
-        temperature=0.8,
-        max_tokens_to_sample=8192,
+        temperature=0.1,
+        max_tokens_to_sample=50000,
         stream=False,
+    )
+
+    graph_creation_config = GraphCreationSettings(
+        generation_config=rag_generation_config,
     )
 
     chonkie_embeddings = ChonkieEmbeddings(

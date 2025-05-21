@@ -3,8 +3,8 @@ A simple R2R Client for RAG evaluation
 """
 
 from r2r import R2RClient as _R2RClient
-from typing import List
-from r2r_client.config import GenerationConfig, SearchSettings
+from typing import List, Optional
+from r2r_client.config import GenerationConfig, SearchSettings, GraphCreationSettings
 from utils import get_logger
 
 

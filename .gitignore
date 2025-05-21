@@ -6,6 +6,8 @@ __pycache__/
 # C extensions
 *.so
 
+prova*.py
+
 __pycache__/
 # Distribution / packaging
 .Python
