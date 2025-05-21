@@ -35,9 +35,36 @@ class R2RClient:
             for doc in documents.results:
                 self.client.documents.delete(str(doc.id))
 
-    def ingest_chunks(self, chunks: List[str]) -> None:
+    def ingest_chunks(
+        self,
+        chunks: List[str],
+        extract_entities: bool = False,
+        graph_creation_config: Optional[GraphCreationSettings] = None,
+    ) -> None:
         """Ingest chunks into R2R"""
-        self.client.documents.create(chunks=chunks)
+        ingestion_response = self.client.documents.create(chunks=chunks)
+        if extract_entities:
+            # HERE WE JUST INGEST AND EXTRACT ENTITIES
+            # For Graph RAG, we need to extract entities and relationships after ingestion
+            # The entities extracted are not directly added into the graph
+            # To add them: client.graphs.pull(collection_id=collection_id)
+            # As soon as the graph is pulled we can build communities, in order to perform semantic search over communities.
+            # client.graphs.build(collection_id=collection_id)
+            try:
+                document_id = ingestion_response.results.document_id
+                logger.info("Extracting entities for document ID: %s", document_id)
+                self.client.documents.extract(
+                    id=document_id,
+                    settings=graph_creation_config.to_dict(),
+                    run_with_orchestration=False,
+                )
+                self.client.documents.deduplicate(
+                    id=document_id,
+                    run_with_orchestration=False,
+                )  # Deduplicate the extracted entities
+            except Exception as e:
+                logger.error("Error extracting entities: %s", e)
+                return
 
     def process_rag_query(
         self,
@@ -64,3 +91,12 @@ class R2RClient:
             search_settings=search_settings.to_dict(),
         )
         return response
+
+    def reset_graph(
+        self,
+        collection_id: str,
+    ) -> None:
+        """Reset the graph"""
+        self.client.graphs.reset(
+            collection_id=collection_id,
+        )

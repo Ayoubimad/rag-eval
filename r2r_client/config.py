@@ -2,7 +2,7 @@
 Configurations for the R2R Client
 """
 
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from typing import Any, Dict, Optional, List
 
 
@@ -95,3 +95,32 @@ class GenerationConfig:
 
     def __str__(self) -> str:
         return str(self.to_dict())
+
+
+@dataclass
+class GraphCreationSettings:
+    """Settings for knowledge graph creation."""
+
+    graph_extraction_prompt: str = "graph_extraction"
+    graph_entity_description_prompt: str = "graph_entity_description"
+    entity_types: List[str] = field(default_factory=list)
+    relation_types: List[str] = field(default_factory=list)
+    chunk_merge_count: int = 2
+    max_knowledge_relationships: int = 100
+    max_description_input_length: int = 65536
+    generation_config: Optional[GenerationConfig] = None
+    automatic_deduplication: bool = False
+
+    def to_dict(self) -> dict:
+        d = {}
+        for k, v in asdict(self).items():
+            if v is not None:
+                if isinstance(v, (list, dict)) and not v:
+                    continue
+                if hasattr(v, "to_dict"):
+                    settings_dict = v.to_dict()
+                    if settings_dict:
+                        d[k] = settings_dict
+                else:
+                    d[k] = v
+        return d

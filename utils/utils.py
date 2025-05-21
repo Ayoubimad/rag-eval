@@ -1,4 +1,5 @@
 import json
+import re
 from typing import Dict, Any, Tuple, List
 from ragas.integrations.r2r import (
     transform_to_ragas_dataset as transform_to_ragas_dataset_r2r,
@@ -71,3 +72,21 @@ def transform_to_ragas_dataset(
         references=references,
         reference_contexts=reference_contexts,
     )
+
+
+def clean_text(text: str) -> str:
+    """Normalize whitespace in text.
+
+    Args:
+        text: The text to clean
+
+    Returns:
+        Text cleaned of non-ascii characters, base64 images, and normalized whitespace
+    """
+    # Remove base64 images
+    cleaned_text = re.sub(r"!\[.*?\]\(data:image/[^;]*;base64,[^)]*\)", "", text)
+    # Remove emojis while preserving mathematical symbols and other useful unicode
+    cleaned_text = re.sub(r"[\U0001F300-\U0001F9FF]", "", cleaned_text)
+    # Remove formula-not-decoded comments
+    cleaned_text = re.sub(r"<!-- formula-not-decoded -->", "", cleaned_text)
+    return cleaned_text

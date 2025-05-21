@@ -4,6 +4,7 @@ from r2r_client.config import (
     SearchSettings,
     HybridSearchSettings,
     GraphSearchSettings,
+    GraphCreationSettings,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "SearchSettings",
     "HybridSearchSettings",
     "GraphSearchSettings",
+    "GraphCreationSettings",
 ]
