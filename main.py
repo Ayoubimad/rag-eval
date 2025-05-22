@@ -21,12 +21,21 @@ from chunking import (
     SDPMChunker,
     CharacterChunker,
     ChonkieEmbeddings,
+    ChunkingStrategy,
 )
+
+from enrichment import (
+    MetadataEnrichment,
+    ContextualEnrichment,
+    HybridEnrichment,
+    ChunkEnrichmentStrategy,
+)
+
 from langchain_openai import ChatOpenAI
 from executor import run_in_executor
 from concurrent.futures import ThreadPoolExecutor
 from ragas_eval import RagasEvaluationConfig, RagasEvaluator
-from utils import load_dataset, transform_to_ragas_dataset
+from utils import load_dataset, transform_to_ragas_dataset, clean_text
 from dotenv import load_dotenv
 
 logger = get_logger(__name__)
@@ -34,27 +43,10 @@ logger = get_logger(__name__)
 load_dotenv()
 
 
-def clean_text(text: str) -> str:
-    """Normalize whitespace in text.
-
-    Args:
-        text: The text to clean
-
-    Returns:
-        Text cleaned of non-ascii characters, base64 images, and normalized whitespace
-    """
-    # Remove base64 images
-    cleaned_text = re.sub(r"!\[.*?\]\(data:image/[^;]*;base64,[^)]*\)", "", text)
-    # Remove emojis while preserving mathematical symbols and other useful unicode
-    cleaned_text = re.sub(r"[\U0001F300-\U0001F9FF]", "", cleaned_text)
-    # Remove formula-not-decoded comments
-    cleaned_text = re.sub(r"<!-- formula-not-decoded -->", "", cleaned_text)
-    return cleaned_text
-
-
 async def main():
 
     enable_graph_rag = False  # Parameter to control entity extraction and graph RAG
+    enable_enrichment = False  # Parameter to control chunk enrichment
 
     LLM_MODEL = os.getenv("LLM_MODEL")
     LLM_API_KEY = os.getenv("LLM_API_KEY")
@@ -154,6 +146,33 @@ async def main():
         max_workers=os.cpu_count() * 2,
         metrics=["faithfulness", "context_precision", "context_recall"],
     )
+
+    enrichment_configs = {
+        "metadata_enrichment": MetadataEnrichment(
+            llm=llm,
+            include_entities=True,
+            include_keywords=True,
+            include_topic=True,
+            max_entities=15,
+            max_keywords=15,
+            max_concurrency=32,
+            show_progress_bar=True,
+        ),
+        "contextual_enrichment": ContextualEnrichment(
+            llm=llm, n_chunks=2, max_concurrency=32, show_progress_bar=True
+        ),
+        "hybrid_enrichment": HybridEnrichment(
+            llm=llm,
+            n_chunks=2,
+            include_entities=True,
+            include_keywords=True,
+            include_topic=True,
+            max_entities=15,
+            max_keywords=15,
+            metadata_first=False,
+            show_progress_bar=True,
+        ),
+    }
 
     configs = {
         "semantic_search": {
@@ -357,9 +376,7 @@ async def main():
                 reference_contexts=reference_contexts,
             )
 
-            logger.info(
-                "\nEvaluation results for %s + %s:", chunker_name, strategy_name
-            )
+            logger.info("Running evaluation...")
             results = evaluator.evaluate_dataset(ragas_eval_dataset)
             import ast
 

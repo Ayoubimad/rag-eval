@@ -189,3 +189,4 @@ ragas_cache/
 scripts/
 docker_cleanup.sh
 _generate_testset.py
+grid_search_results.csv

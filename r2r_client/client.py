@@ -2,6 +2,7 @@
 A simple R2R Client for RAG evaluation
 """
 
+import time
 from r2r import R2RClient as _R2RClient
 from typing import List, Optional, Any
 from r2r_client.config import GenerationConfig, SearchSettings, GraphCreationSettings
@@ -34,6 +35,7 @@ class R2RClient:
 
             for doc in documents.results:
                 self.client.documents.delete(str(doc.id))
+            time.sleep(5)
 
     def ingest_chunks(
         self,
