@@ -7,8 +7,7 @@ __pycache__/
 *.so
 
 prova*.py
-*/*.out
-scripts/*.out
+**/*.out
 
 __pycache__/
 # Distribution / packaging
@@ -187,3 +186,5 @@ datasets/
 logs/
 results/
 ragas_cache/
+scripts/
+docker_cleanup.sh
