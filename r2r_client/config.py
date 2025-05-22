@@ -1,9 +1,12 @@
 """
-Configurations for the R2R Client
+Configuration module for the RAG evaluation framework.
+
+This module provides data classes for configuration settings used throughout
+the evaluation framework, ensuring type safety and validation.
 """
 
 from dataclasses import dataclass, asdict, field
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, Literal
 
 
 @dataclass
@@ -36,36 +39,29 @@ class GraphSearchSettings:
 
 @dataclass
 class SearchSettings:
-    """Main search settings class that combines shared settings with specialized settings."""
+    """Configuration for the search part of RAG"""
 
+    limit: Optional[int] = None
+    search_strategy: Optional[str] = None
     use_hybrid_search: Optional[bool] = None
     use_semantic_search: Optional[bool] = None
     use_fulltext_search: Optional[bool] = None
     filters: Optional[Dict[str, Any]] = None
-    limit: Optional[int] = None
+    graph_settings: Optional[Dict[str, Any]] = None
+    hybrid_settings: Optional[Dict[str, Any]] = None
     offset: Optional[int] = None
     include_metadatas: Optional[bool] = None
     include_scores: Optional[bool] = None
-    search_strategy: Optional[str] = None
-    hybrid_settings: Optional[HybridSearchSettings] = None
-    graph_settings: Optional[GraphSearchSettings] = None
     num_sub_queries: Optional[int] = None
 
-    def to_dict(self) -> dict:
-        result = {}
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert configuration to dictionary format for API calls"""
+        settings = {}
+
         for k, v in asdict(self).items():
             if v is not None:
-                if isinstance(v, dict):
-                    filtered = {dk: dv for dk, dv in v.items() if dv is not None}
-                    if filtered:
-                        result[k] = filtered
-                elif hasattr(v, "to_dict"):
-                    settings_dict = v.to_dict()
-                    if settings_dict:
-                        result[k] = settings_dict
-                else:
-                    result[k] = v
-        return result
+                settings[k] = v
+        return settings
 
 
 @dataclass
@@ -76,6 +72,7 @@ class GenerationConfig:
     temperature: Optional[float] = None
     top_p: Optional[float] = None
     max_tokens_to_sample: Optional[int] = None
+    max_tokens: Optional[int] = None
     stream: Optional[bool] = None
     functions: Optional[List[Any]] = None
     tools: Optional[List[Any]] = None

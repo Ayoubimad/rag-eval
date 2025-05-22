@@ -48,7 +48,7 @@ class R2RClient:
             # For Graph RAG, we need to extract entities and relationships after ingestion
             # The entities extracted are not directly added into the graph
             # To add them: client.graphs.pull(collection_id=collection_id)
-            # As soon as the graph is pulled we can build communities, in order to perform semantic search over communities.
+            # As soon as the graph is pulled we can build communities in order to perform semantic search over communities.
             # client.graphs.build(collection_id=collection_id)
             try:
                 document_id = ingestion_response.results.document_id
@@ -71,14 +71,12 @@ class R2RClient:
         search_mode: str,
     ) -> Any:
         """Process a RAG query"""
-        # gen_config_dict = generation_config.to_dict()
-        # search_settings_dict = search_settings.to_dict()
 
         # logger.info(
         #    "Processing RAG query with rag_generation_config=%s, search_settings=%s, search_mode=%s",
-        #    {k: f"{v} ({type(v).__name__})" for k, v in gen_config_dict.items()},
-        #    {k: f"{v} ({type(v).__name__})" for k, v in search_settings_dict.items()},
-        #    f"{search_mode} ({type(search_mode).__name__})",
+        #    rag_generation_config.to_dict(),
+        #    search_settings.to_dict(),
+        #    search_mode,
         # )
 
         return self.client.retrieval.rag(

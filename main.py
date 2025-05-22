@@ -54,7 +54,7 @@ def clean_text(text: str) -> str:
 
 async def main():
 
-    enable_graph_rag = True  # Parameter to control entity extraction and graphRAG
+    enable_graph_rag = False  # Parameter to control entity extraction and graph RAG
 
     LLM_MODEL = os.getenv("LLM_MODEL")
     LLM_API_KEY = os.getenv("LLM_API_KEY")
@@ -93,9 +93,10 @@ async def main():
     dataset_path = "/home/e4user/rag-eval/data/datasets/ragas_testset_tesi.json"
     dir_path = "/home/e4user/rag-eval/data/Grasselli_md"
 
-    client = R2RClient(base_url="http://localhost:7272", timeout=3600)
+    client = R2RClient(
+        base_url="http://localhost:7272", timeout=604800
+    )  # 1 week timeout (7*24*60*60 seconds)
 
-    # Enable graph settings if Graph RAG is enabled
     graph_settings = GraphSearchSettings(
         enabled=enable_graph_rag,
     )
@@ -110,8 +111,8 @@ async def main():
     rag_generation_config = GenerationConfig(
         model=RAG_GENERATION_MODEL,
         api_base=RAG_GENERATION_API_BASE,
-        temperature=0.1,
-        max_tokens_to_sample=50000,
+        temperature=0.8,
+        max_tokens=8192,
         stream=False,
     )
 
@@ -139,9 +140,19 @@ async def main():
         llm_model=LLM_MODEL,
         llm_api_key=LLM_API_KEY,
         llm_api_base=LLM_API_BASE,
+        llm_max_tokens=4096,
+        llm_temperature=0.1,
+        llm_timeout=240,
+        llm_top_p=1,
+        embeddings_timeout=240,
         embeddings_model=EMBEDDINGS_MODEL,
         embeddings_api_key=EMBEDDINGS_API_KEY,
         embeddings_api_base=EMBEDDINGS_API_BASE,
+        eval_timeout=3600,
+        cache_dir="ragas_cache",
+        batch_size=500,
+        max_workers=os.cpu_count() * 2,
+        metrics=["faithfulness", "context_precision", "context_recall"],
     )
 
     configs = {
@@ -149,7 +160,9 @@ async def main():
             "search_settings": SearchSettings(
                 limit=5,
                 use_semantic_search=True,
-                graph_settings=graph_settings,
+                use_hybrid_search=False,
+                use_fulltext_search=False,
+                graph_settings=graph_settings.to_dict(),
             ),
             "search_mode": "custom",
         },
@@ -158,9 +171,9 @@ async def main():
                 use_hybrid_search=True,
                 use_semantic_search=True,
                 use_fulltext_search=True,
-                hybrid_settings=hybrid_search_settings,
+                hybrid_settings=hybrid_search_settings.to_dict(),
                 limit=5,
-                graph_settings=graph_settings,
+                graph_settings=graph_settings.to_dict(),
             ),
             "search_mode": "custom",
         },
@@ -170,9 +183,9 @@ async def main():
                 use_hybrid_search=False,
                 use_semantic_search=True,
                 use_fulltext_search=False,
-                hybrid_settings=hybrid_search_settings,
+                hybrid_settings=hybrid_search_settings.to_dict(),
                 limit=5,
-                graph_settings=graph_settings,
+                graph_settings=graph_settings.to_dict(),
             ),
             "search_mode": "custom",
         },
@@ -183,8 +196,8 @@ async def main():
                 use_semantic_search=True,
                 use_fulltext_search=False,
                 limit=5,
-                hybrid_settings=hybrid_search_settings,
-                graph_settings=graph_settings,
+                hybrid_settings=hybrid_search_settings.to_dict(),
+                graph_settings=graph_settings.to_dict(),
             ),
             "search_mode": "custom",
         },
@@ -219,6 +232,12 @@ async def main():
     user_inputs, references, reference_contexts = load_dataset(
         dataset_path=dataset_path
     )
+    logger.info(
+        "Loaded dataset with %d user inputs, %d references, and %d reference contexts",
+        len(user_inputs),
+        len(references),
+        len(reference_contexts),
+    )
 
     ingestion_thread_pool = ThreadPoolExecutor(max_workers=16)
     search_thread_pool = ThreadPoolExecutor(max_workers=16)
@@ -228,14 +247,13 @@ async def main():
         logger.info("Testing chunker: %s", chunker_name)
 
         logger.info("Deleting all documents from R2R...")
-        await run_in_executor(None, client.delete_all_documents)
+        # await run_in_executor(None, client.delete_all_documents)
 
-        if enable_graph_rag:
-            logger.info("Resetting graph...")
-            default_collection_id = await run_in_executor(
-                None, client.get_default_collection_id
-            )
-            await run_in_executor(None, client.graph_reset, default_collection_id)
+        logger.info("Resetting graph...")
+        default_collection_id = await run_in_executor(
+            None, client.get_default_collection_id
+        )
+        await run_in_executor(None, client.graph_reset, default_collection_id)
 
         async def process_and_ingest_file(file):
             def read_and_chunk():
@@ -304,7 +322,7 @@ async def main():
                 strategy_config["search_settings"].to_dict(),
             )
 
-            async def process_query(user_input):
+            async def process_query(index, user_input):
                 r2r_response = await run_in_executor(
                     search_thread_pool,
                     client.process_rag_query,
@@ -313,16 +331,24 @@ async def main():
                     strategy_config["search_settings"],
                     strategy_config["search_mode"],
                 )
-                return r2r_response
+                return index, r2r_response
 
-            tasks = [process_query(user_input) for user_input in user_inputs]
-            r2r_responses = []
+            tasks = [
+                process_query(i, user_input) for i, user_input in enumerate(user_inputs)
+            ]
+            results = []
             for task in tqdm(
                 asyncio.as_completed(tasks),
                 total=len(tasks),
                 desc=f"Processing queries with {strategy_name}",
             ):
-                r2r_responses.append(await task)
+                index, response = await task
+                results.append((index, response))
+
+            results.sort(
+                key=lambda x: x[0]
+            )  # Fixed: mismatched orderafter 2 days, i want to cry
+            r2r_responses = [response for _, response in results]
 
             ragas_eval_dataset = transform_to_ragas_dataset(
                 user_inputs=user_inputs,
@@ -335,7 +361,15 @@ async def main():
                 "\nEvaluation results for %s + %s:", chunker_name, strategy_name
             )
             results = evaluator.evaluate_dataset(ragas_eval_dataset)
-            logger.info("%s", results)
+            import ast
+
+            literal = ast.literal_eval(str(results))
+            logger.info(
+                "Faithfulness: %s, Context Precision: %s, Context Recall: %s",
+                literal["faithfulness"],
+                literal["context_precision"],
+                literal["context_recall"],
+            )
 
     ingestion_thread_pool.shutdown(wait=True)
     search_thread_pool.shutdown(wait=True)

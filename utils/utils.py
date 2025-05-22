@@ -54,7 +54,11 @@ def load_dataset(dataset_path: str) -> Tuple[List[str], List[str], List[List[str
     """
     with open(dataset_path, "r") as f:
         dataset = json.load(f)
-    return dataset["user_input"], dataset["reference"], dataset["reference_contexts"]
+    return (
+        dataset["user_input"],
+        dataset["reference"],
+        dataset["reference_contexts"],
+    )
 
 
 def transform_to_ragas_dataset(

@@ -80,6 +80,9 @@ class RagasLLMFactory:
             api_key: API key for the model
             api_base: Base URL for the API
             temperature: Model temperature setting
+            top_p: Top-p sampling parameter
+            timeout: Request timeout in seconds
+            max_tokens: Maximum number of tokens to generate
             cache: Optional cache backend
 
         Returns:
@@ -115,6 +118,7 @@ class RagasEmbeddingFactory:
             model: Model identifier
             api_key: API key for the model
             api_base: Base URL for the API
+            timeout: Request timeout in seconds
             cache: Optional cache backend
 
         Returns:
@@ -139,8 +143,7 @@ class RagasMetricsFactory:
 
         Args:
             metric_names: Names of metrics to create (if None, creates all). Available metrics are
-
-            "faithfulness", "context_precision", "context_recall"
+                "faithfulness", "context_precision", "context_recall"
 
         Returns:
             List of metric instances
@@ -162,9 +165,7 @@ class RagasMetricsFactory:
             else:
                 raise ValueError(f"Unknown metric: {name}")
 
-        return metrics or [
-            metric_class() for metric_class in available_metrics.values()
-        ]
+        return metrics
 
 
 class CacheManager:
