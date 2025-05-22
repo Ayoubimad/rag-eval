@@ -71,9 +71,7 @@ def load_config(config_path):
             matches = re.findall(pattern, item)
             for match in matches:
                 if match == "CPU_COUNT":
-                    env_value = (
-                        os.cpu_count() * 2
-                    )  # Double the CPU count as per original code
+                    env_value = os.cpu_count() * 2
                 else:
                     env_value = os.getenv(match)
                 if env_value is not None:
