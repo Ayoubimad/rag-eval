@@ -122,8 +122,8 @@ This project requires an R2R instance to be running. R2R is a RAG system that pr
 
 ```python
 client = R2RClient(
-    base_url="http://localhost:7272", timeout=604800
-)  # 1 week timeout (7*24*60*60 seconds)
+    base_url="http://localhost:7272", timeout=60
+)
 ```
 
 ### Running the Main Evaluation Script
