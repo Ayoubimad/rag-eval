@@ -3,6 +3,9 @@ import asyncio
 import csv
 import copy
 import time
+import yaml
+import sys
+import re
 from itertools import product
 from concurrent.futures import ThreadPoolExecutor
 
@@ -46,6 +49,145 @@ logger = get_logger(__name__)
 load_dotenv()
 
 
+def load_config(config_path):
+    """
+    Load configuration from a YAML file.
+    Replace environment variable placeholders with actual values.
+
+    Args:
+        config_path: Path to the YAML configuration file
+
+    Returns:
+        dict: Loaded and processed configuration
+    """
+    with open(config_path, "r") as f:
+        config = yaml.safe_load(f)
+
+    # Process environment variable substitutions
+    def process_env_vars(item):
+        if isinstance(item, str):
+            # Substitute environment variables ${ENV_VAR}
+            pattern = r"\$\{([^}]+)\}"
+            matches = re.findall(pattern, item)
+            for match in matches:
+                if match == "CPU_COUNT":
+                    env_value = (
+                        os.cpu_count() * 2
+                    )  # Double the CPU count as per original code
+                else:
+                    env_value = os.getenv(match)
+                if env_value is not None:
+                    item = item.replace(f"${{{match}}}", str(env_value))
+
+            # Try to convert numeric strings to their appropriate types
+            if item.isdigit():
+                return int(item)
+            try:
+                float_val = float(item)
+                # Check if it's an integer in float form
+                if float_val.is_integer():
+                    return int(float_val)
+                return float_val
+            except ValueError:
+                return item
+        elif isinstance(item, dict):
+            return {k: process_env_vars(v) for k, v in item.items()}
+        elif isinstance(item, list):
+            return [process_env_vars(i) for i in item]
+        else:
+            return item
+
+    return process_env_vars(config)
+
+
+def create_search_configs(config_data):
+    """
+    Create search configurations from config data
+
+    Args:
+        config_data: Configuration data from YAML
+
+    Returns:
+        dict: Search configurations
+    """
+    search_configs = {}
+
+    for name, config in config_data["search_configs"].items():
+        search_settings_dict = config["search_settings"]
+
+        # Convert nested dictionaries if present
+        if "hybrid_settings" in search_settings_dict and isinstance(
+            search_settings_dict["hybrid_settings"], dict
+        ):
+            search_settings_dict["hybrid_settings"] = HybridSearchSettings(
+                **search_settings_dict["hybrid_settings"]
+            ).to_dict()
+
+        search_configs[name] = {
+            "search_settings": SearchSettings(**search_settings_dict),
+            "search_mode": config["search_mode"],
+        }
+
+    return search_configs
+
+
+def create_chunkers(config_data, embedding_model):
+    """
+    Create chunker instances from config data
+
+    Args:
+        config_data: Configuration data from YAML
+        embedding_model: Embedding model to use for semantic chunkers
+
+    Returns:
+        dict: Chunker instances
+    """
+    chunkers = {}
+
+    for name, config in config_data["chunkers"].items():
+        chunker_type = config["type"]
+        params = config["params"]
+
+        if chunker_type == "CharacterChunker":
+            chunkers[name] = CharacterChunker(**params)
+        elif chunker_type == "SemanticChunker":
+            chunkers[name] = SemanticChunker(embedding_model=embedding_model, **params)
+        elif chunker_type == "SDPMChunker":
+            chunkers[name] = SDPMChunker(embedding_model=embedding_model, **params)
+        elif chunker_type == "AgenticChunker":
+            # Agentic chunker needs an LLM
+            chunkers[name] = AgenticChunker(model=_llm, **params)
+
+    return chunkers
+
+
+def create_enrichment_configs(config_data, llm):
+    """
+    Create enrichment configurations from config data
+
+    Args:
+        config_data: Configuration data from YAML
+        llm: LLM model to use for enrichment
+
+    Returns:
+        dict: Enrichment configurations
+    """
+    enrichment_configs = {}
+
+    for name, config in config_data["enrichments"].items():
+        enrichment_type = config["type"]
+        params = config["params"]
+
+        if enrichment_type == "MetadataEnrichment":
+            enrichment_configs[name] = MetadataEnrichment(llm=llm, **params)
+        elif enrichment_type == "ContextualEnrichment":
+            enrichment_configs[name] = ContextualEnrichment(llm=llm, **params)
+        elif enrichment_type == "HybridEnrichment":
+            enrichment_configs[name] = HybridEnrichment(llm=llm, **params)
+
+    return enrichment_configs
+
+
 def grid_search(
     search_configs: dict[str, dict],
     chunkers: dict[str, ChunkingStrategy],
@@ -55,6 +197,10 @@ def grid_search(
     dataset_path: str,
     file_dir_path: str,
     output_csv_path: str = "grid_search_results.csv",
+    r2r_base_url: str = "http://localhost:7272",
+    r2r_timeout: int = 604800,
+    ingestion_thread_pool_workers: int = 16,
+    search_thread_pool_workers: int = 16,
 ):
     """
     Execute a comprehensive grid search across all combinations of parameters:
@@ -74,11 +220,13 @@ def grid_search(
         dataset_path: Path to the dataset for evaluation
         file_dir_path: Path to the directory containing files to ingest
         output_csv_path: Path to save the CSV results
+        r2r_base_url: Base URL for R2R client
+        r2r_timeout: Timeout for R2R client
+        ingestion_thread_pool_workers: Number of workers for ingestion thread pool
+        search_thread_pool_workers: Number of workers for search thread pool
     """
 
-    client = R2RClient(
-        base_url="http://localhost:7272", timeout=604800
-    )  # 1 week timeout (7*24*60*60 seconds)
+    client = R2RClient(base_url=r2r_base_url, timeout=r2r_timeout)
 
     evaluator = RagasEvaluator(ragas_evaluation_config)
     user_inputs, references, reference_contexts = load_dataset(
@@ -131,8 +279,10 @@ def grid_search(
     current_combination = 0
 
     # Thread pools for parallel processing
-    ingestion_thread_pool = ThreadPoolExecutor(max_workers=16)
-    search_thread_pool = ThreadPoolExecutor(max_workers=16)
+    ingestion_thread_pool = ThreadPoolExecutor(
+        max_workers=ingestion_thread_pool_workers
+    )
+    search_thread_pool = ThreadPoolExecutor(max_workers=search_thread_pool_workers)
 
     files = os.listdir(file_dir_path)
 
@@ -270,7 +420,7 @@ def grid_search(
 
                 ## Query Processing Workflow
                 ## ------------------------
-                ## This section orchestrates the parallel processing of all queries against the RAG system:
+                ## This section orchestrates the parallel processing of all user queries against the RAG system:
                 ## 1. For each user query, we create an async task to process it through R2R
                 ## 2. We track the original index to maintain order of results
                 ## 3. Queries are processed concurrently for efficiency, with progress displayed
@@ -377,199 +527,79 @@ def grid_search(
     return output_csv_path
 
 
-async def run_search():
-    LLM_MODEL = os.getenv("LLM_MODEL")
-    LLM_API_KEY = os.getenv("LLM_API_KEY")
-    LLM_API_BASE = os.getenv("LLM_API_BASE")
-    EMBEDDINGS_MODEL = os.getenv("EMBEDDINGS_MODEL")
-    EMBEDDINGS_API_KEY = os.getenv("EMBEDDINGS_API_KEY")
-    EMBEDDINGS_API_BASE = os.getenv("EMBEDDINGS_API_BASE")
-    RAG_GENERATION_MODEL = os.getenv("RAG_GENERATION_MODEL")
-    RAG_GENERATION_API_BASE = os.getenv("RAG_GENERATION_API_BASE")
-    RAG_GENERATION_API_KEY = os.getenv("RAG_GENERATION_API_KEY")
+def run_search_from_config(config_path):
+    """Run search based on a YAML configuration file"""
+    if not os.path.exists(config_path):
+        logger.error(f"Configuration file not found: {config_path}")
+        return
 
-    logger.info("Starting grid search with environment configuration")
+    logger.info(f"Loading configuration from {config_path}")
+    config = load_config(config_path)
 
-    dataset_path = "/home/e4user/rag-eval/data/datasets/ragas_testset_tesi.json"
-    dir_path = "/home/e4user/rag-eval/data/Grasselli_md"
-    output_csv = "/home/e4user/rag-eval/grid_search_results.csv"
-
-    chonkie_embeddings = ChonkieEmbeddings(
-        model=EMBEDDINGS_MODEL,
-        api_key=EMBEDDINGS_API_KEY,
-        base_url=EMBEDDINGS_API_BASE,
-        embedding_dimension=1024,
+    # Setup global LLM for use in chunkers and enrichment
+    global _llm
+    _llm = ChatOpenAI(
+        model=config["llm"]["model"],
+        api_key=config["llm"]["api_key"],
+        base_url=config["llm"]["base_url"],
     )
 
-    llm = ChatOpenAI(
-        model=LLM_MODEL,
-        api_key=LLM_API_KEY,
-        base_url=LLM_API_BASE,
-    )
-
-    test_response = llm.invoke("Say hello!")
+    # Test LLM connection
+    test_response = _llm.invoke("Say hello!")
     logger.info("LLM test response: %s", test_response.content)
 
+    # Create embeddings model
+    chonkie_embeddings = ChonkieEmbeddings(
+        model=config["embeddings"]["model"],
+        api_key=config["embeddings"]["api_key"],
+        base_url=config["embeddings"]["base_url"],
+        embedding_dimension=config["embeddings"]["embedding_dimension"],
+    )
+
+    # Create RAG generation config
     rag_generation_config = GenerationConfig(
-        model=RAG_GENERATION_MODEL,
-        api_base=RAG_GENERATION_API_BASE,
-        temperature=0.8,
-        max_tokens=8192,
-        stream=False,
+        model=config["rag_generation"]["model"],
+        api_base=config["rag_generation"]["api_base"],
+        temperature=config["rag_generation"]["temperature"],
+        max_tokens=config["rag_generation"]["max_tokens"],
+        stream=config["rag_generation"]["stream"],
     )
 
-    hybrid_search_settings = HybridSearchSettings(
-        full_text_weight=0.3,
-        semantic_weight=0.7,
-        full_text_limit=200,
-        rrf_k=60,
+    # Create RAGAS evaluation config
+    ragas_evaluation_config = RagasEvaluationConfig(**config["ragas_evaluation"])
+
+    # Create search configurations
+    search_configs = create_search_configs(config)
+
+    # Create chunkers
+    chunkers = create_chunkers(config, chonkie_embeddings)
+
+    # Create enrichment configurations
+    enrichment_configs = create_enrichment_configs(config, _llm)
+
+    logger.info(
+        "Starting grid search across all parameter combinations from configuration"
     )
-
-    ragas_evaluation_config = RagasEvaluationConfig(
-        llm_model=LLM_MODEL,
-        llm_api_key=LLM_API_KEY,
-        llm_api_base=LLM_API_BASE,
-        llm_max_tokens=4096,
-        llm_temperature=0.1,
-        llm_timeout=240,
-        llm_top_p=1,
-        embeddings_timeout=240,
-        embeddings_model=EMBEDDINGS_MODEL,
-        embeddings_api_key=EMBEDDINGS_API_KEY,
-        embeddings_api_base=EMBEDDINGS_API_BASE,
-        eval_timeout=3600,
-        cache_dir="ragas_cache",
-        batch_size=500,
-        max_workers=os.cpu_count() * 2,
-        metrics=["faithfulness", "context_precision", "context_recall"],
-    )
-
-    search_configs = {
-        "semantic_search": {
-            "search_settings": SearchSettings(
-                limit=5,
-                use_semantic_search=True,
-                use_hybrid_search=False,
-                use_fulltext_search=False,
-            ),
-            "search_mode": "custom",
-        },
-        "hybrid_search": {
-            "search_settings": SearchSettings(
-                use_hybrid_search=True,
-                use_semantic_search=True,
-                use_fulltext_search=True,
-                hybrid_settings=hybrid_search_settings.to_dict(),
-                limit=5,
-            ),
-            "search_mode": "custom",
-        },
-        "rag_fusion": {
-            "search_settings": SearchSettings(
-                search_strategy="rag_fusion",
-                use_hybrid_search=False,
-                use_semantic_search=True,
-                use_fulltext_search=False,
-                limit=5,
-            ),
-            "search_mode": "custom",
-        },
-        "hyde": {
-            "search_settings": SearchSettings(
-                search_strategy="hyde",
-                use_hybrid_search=False,
-                use_semantic_search=True,
-                use_fulltext_search=False,
-                limit=5,
-            ),
-            "search_mode": "custom",
-        },
-        "hyde_hybrid": {
-            "search_settings": SearchSettings(
-                search_strategy="hyde",
-                use_hybrid_search=True,
-                use_semantic_search=True,
-                use_fulltext_search=True,
-                limit=5,
-            ),
-            "search_mode": "custom",
-        },
-        "rag_fusion_hybrid": {
-            "search_settings": SearchSettings(
-                search_strategy="rag_fusion",
-                use_hybrid_search=True,
-                use_semantic_search=True,
-                use_fulltext_search=True,
-                limit=5,
-            ),
-            "search_mode": "custom",
-        },
-    }
-
-    chunkers = {
-        "character": CharacterChunker(
-            chunk_size=1024,
-            chunk_overlap=256,
-        ),
-        "semantic": SemanticChunker(
-            embedding_model=chonkie_embeddings,
-            chunk_size=256,
-            threshold=0.5,
-        ),
-        "sdpm": SDPMChunker(
-            embedding_model=chonkie_embeddings,
-            chunk_size=256,
-            threshold=0.5,
-        ),
-        "agentic": AgenticChunker(
-            max_chunk_size=1024,
-            model=llm,
-        ),
-    }
-
-    enrichment_configs = {
-        "metadata_enrichment": MetadataEnrichment(
-            llm=llm,
-            include_entities=True,
-            include_keywords=True,
-            include_topic=True,
-            max_entities=15,
-            max_keywords=15,
-            max_concurrency=32,
-            show_progress_bar=True,
-        ),
-        "contextual_enrichment": ContextualEnrichment(
-            llm=llm, n_chunks=2, max_concurrency=32, show_progress_bar=True
-        ),
-        "hybrid_enrichment": HybridEnrichment(
-            llm=llm,
-            n_chunks=2,
-            include_entities=True,
-            include_keywords=True,
-            include_topic=True,
-            max_entities=15,
-            max_keywords=15,
-            metadata_first=False,
-            show_progress_bar=True,
-        ),
-    }
-
-    logger.info("Starting grid search across all parameter combinations")
-    result_csv = await grid_search(
+    result_csv = grid_search(
         search_configs=search_configs,
         chunkers=chunkers,
         enrichment_configs=enrichment_configs,
         ragas_evaluation_config=ragas_evaluation_config,
         rag_generation_config=rag_generation_config,
-        dataset_path=dataset_path,
-        file_dir_path=dir_path,
-        output_csv_path=output_csv,
+        dataset_path=config["base"]["dataset_path"],
+        file_dir_path=config["base"]["dir_path"],
+        output_csv_path=config["base"]["output_csv"],
+        r2r_base_url=config["base"]["r2r_base_url"],
+        r2r_timeout=config["base"]["r2r_timeout"],
+        ingestion_thread_pool_workers=config["base"]["ingestion_thread_pool_workers"],
+        search_thread_pool_workers=config["base"]["search_thread_pool_workers"],
     )
 
     logger.info(f"Grid search completed. Results saved to: {result_csv}")
 
 
 if __name__ == "__main__":
-    # To run this script with nohup without creating a nohup.out file, use:
-    # nohup python run_grid_search.py > /dev/null 2>&1 &
-    asyncio.run(run_search())
+    # Allow specifying a config file as a command line argument
+    # Default to grid_search_config.yaml if not specified
+    config_path = sys.argv[1] if len(sys.argv) > 1 else "grid_search_config.yaml"
+    asyncio.run(run_search_from_config(config_path))
