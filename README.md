@@ -1,4 +1,4 @@
-# Comparative Analysis of RAG Components: Chunking Strategies, Retrieval Methods, and Evaluation Metrics
+# Comparative Analysis of RAG Components: Chunking Strategies, Retrieval Methods, and Enrichment Strategies 
 
 Thesis Project on Retrieval-Augmented Generation Systems
 
