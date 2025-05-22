@@ -1,6 +1,7 @@
 import os
 import asyncio
 import csv
+import copy
 import time
 from itertools import product
 from concurrent.futures import ThreadPoolExecutor
@@ -38,6 +39,7 @@ from enrichment import (
 
 from langchain_openai import ChatOpenAI
 from ragas_eval import RagasEvaluationConfig, RagasEvaluator
+from evaluation_logger import EvaluationLogger
 
 logger = get_logger(__name__)
 
@@ -109,6 +111,11 @@ def grid_search(
             ]
         )
 
+    # Create evaluation logger
+    eval_logger = EvaluationLogger(
+        log_file_path=output_csv_path.replace(".csv", "_progress.log")
+    )
+
     # Generate all combinations
     graph_options = [False, True]
     # Add "none" as enrichment strategy to evaluate without enrichment
@@ -130,20 +137,22 @@ def grid_search(
     files = os.listdir(file_dir_path)
 
     try:
-        for chunker_name, enable_graph_rag, enrichment_name in product(
-            chunkers.keys(), graph_options, enrichment_options
+        # Reordered the parameters to match the requested order:
+        # 1. graph_enabled, 2. enrichment, 3. chunker, 4. strategies
+        for enable_graph_rag, enrichment_name, chunker_name in product(
+            graph_options, enrichment_options, chunkers.keys()
         ):
             chunker = chunkers[chunker_name]
             enable_chunk_enrichment = enrichment_name != "none"
 
             current_combination += 1
             logger.info(
-                "\n[%d/%d] Testing combination: Chunker=%s, Graph=%s, Enrichment=%s",
+                "\n[%d/%d] Testing combination: Graph=%s, Enrichment=%s, Chunker=%s",
                 current_combination,
                 total_combinations,
-                chunker_name,
                 enable_graph_rag,
                 enrichment_name,
+                chunker_name,
             )
 
             # Create graph creation config based on graph_enabled flag
@@ -237,7 +246,6 @@ def grid_search(
             # Update all search configurations with the current graph settings
             for strategy_name, strategy_config in search_configs.items():
                 # Deep copy search settings to avoid modifying the original
-                import copy
 
                 search_settings = copy.deepcopy(strategy_config["search_settings"])
 
@@ -245,15 +253,33 @@ def grid_search(
                 search_settings.graph_settings = graph_settings.to_dict()
 
                 logger.info(
-                    "\nTesting %s strategy with %s chunker, graph=%s, enrichment=%s",
+                    "\nTesting %s strategy with graph=%s, enrichment=%s, chunker=%s",
                     strategy_name,
-                    chunker_name,
                     enable_graph_rag,
                     enrichment_name,
+                    chunker_name,
                 )
+
+                # Log the current evaluation type
+                eval_logger.log_evaluation(
+                    graph_enabled=enable_graph_rag,
+                    enrichment_strategy=enrichment_name,
+                    chunker_name=chunker_name,
+                    search_strategy=strategy_name,
+                )
+
+                ## Query Processing Workflow
+                ## ------------------------
+                ## This section orchestrates the parallel processing of all user queries against the RAG system:
+                ## 1. For each user query, we create an async task to process it through R2R
+                ## 2. We track the original index to maintain order of results
+                ## 3. Queries are processed concurrently for efficiency, with progress displayed
+                ## 4. Finally, we reorder results to match the original dataset order
 
                 # Create async function to handle query processing
                 async def process_all_queries():
+                    ## Process a single query with the current search strategy
+                    ## The index is tracked to preserve the original order when reassembling results
                     async def process_query(index, user_input):
                         r2r_response = await run_in_executor(
                             search_thread_pool,
@@ -265,10 +291,15 @@ def grid_search(
                         )
                         return index, r2r_response
 
+                    ## Create a task for each user query to enable parallel processing
+                    ## This significantly improves throughput compared to sequential processing
                     tasks = [
                         process_query(i, user_input)
                         for i, user_input in enumerate(user_inputs)
                     ]
+
+                    ## Collect results as they complete (non-deterministic order)
+                    ## Using asyncio.as_completed allows us to process results as soon as they're available
                     query_results = []
                     for task in tqdm(
                         asyncio.as_completed(tasks),
@@ -278,6 +309,8 @@ def grid_search(
                         index, response = await task
                         query_results.append((index, response))
 
+                    ## Restore the original dataset order by sorting on the tracked indices
+                    ## This ensures evaluation metrics align with the expected order of the dataset
                     query_results.sort(key=lambda x: x[0])  # Sort by index
                     return [response for _, response in query_results]
 
@@ -338,6 +371,7 @@ def grid_search(
         ingestion_thread_pool.shutdown(wait=True)
         search_thread_pool.shutdown(wait=True)
         csv_file.close()
+        eval_logger.finalize()  # Log completion of evaluation
 
     logger.info("\nGrid search completed. Results saved to %s", output_csv_path)
     return output_csv_path
@@ -520,7 +554,7 @@ async def run_search():
         ),
     }
 
-    logger.info("Starting comprehensive grid search across all parameter combinations")
+    logger.info("Starting grid search across all parameter combinations")
     result_csv = await grid_search(
         search_configs=search_configs,
         chunkers=chunkers,
@@ -536,4 +570,6 @@ async def run_search():
 
 
 if __name__ == "__main__":
+    # To run this script with nohup without creating a nohup.out file, use:
+    # nohup python run_grid_search.py > /dev/null 2>&1 &
     asyncio.run(run_search())
