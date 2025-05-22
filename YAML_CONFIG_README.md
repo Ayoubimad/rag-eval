@@ -1,6 +1,6 @@
 # Grid Search Configuration
 
-This system allows you to run grid searches with configurations loaded from YAML files, making it easier to manage and customize your RAG evaluation experiments.
+This system allows you to run grid searches with configurations loaded from YAML files
 
 ## Configuration Files
 
@@ -93,7 +93,7 @@ enrichments:
 
 The configuration system supports substituting environment variables using the `${VAR_NAME}` syntax. The following special variables are available:
 
-- `${CPU_COUNT}`: Automatically set to `os.cpu_count() * 2`
+- `${CPU_COUNT}`: Automatically set to `os.cpu_count()`
 - Any environment variables defined in your `.env` file
 
 ## Customizing Your Experiments
@@ -103,4 +103,3 @@ To run a custom experiment:
 1. Create a copy of one of the existing YAML files
 2. Modify the configurations as needed
 3. Run the grid search with your custom config file
-```
