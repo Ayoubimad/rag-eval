@@ -1,4 +1,4 @@
-# Grid Search Configuration System
+# Grid Search Configuration
 
 This system allows you to run grid searches with configurations loaded from YAML files, making it easier to manage and customize your RAG evaluation experiments.
 
@@ -12,19 +12,15 @@ This system allows you to run grid searches with configurations loaded from YAML
 ### Method 1: Using the bash script with nohup (recommended for long-running experiments)
 ```bash
 # Run with default config (grid_search_config.yaml)
-./run_grid_search_yaml.sh
+./run_grid_search_nohup_yaml.sh
 
 # Run with specific config file
-./run_grid_search_yaml.sh grid_search_test_config.yaml
+./run_grid_search_nohup_yaml.sh grid_search_test_config.yaml
 ```
 
-### Method 2: Run directly with Python
+### Method 2: Using the python file
 ```bash
-# Run with default config (grid_search_config.yaml)
-python run_grid_search_yaml.py
-
-# Run with specific config file
-python run_grid_search_yaml.py grid_search_test_config.yaml
+python run_grad_search.py
 ```
 
 ## Configuration Structure
